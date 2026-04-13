@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attendance QR Display</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #f1f5f9; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; color: #f8fafc; }
+  #subject-name { font-size: 1rem; color: #94a3b8; margin-bottom: 1.5rem; }
+  #qr-wrapper { background: #fff; border-radius: 16px; padding: 20px; margin-bottom: 1.25rem; position: relative; }
+  #qr-wrapper.refreshing { opacity: 0.15; }
+  #qr-registering { position: absolute; inset: 0; background: rgba(255,255,255,0.93); border-radius: 14px; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+  #qr-registering .spinner { width: 28px; height: 28px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  #qr-registering p { font-size: 0.8rem; color: #64748b; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #timer-bar-bg { width: 300px; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; margin-bottom: 0.6rem; }
+  #timer-bar { height: 100%; width: 100%; border-radius: 4px; transition: width 0.25s linear, background-color 0.5s; background: #22c55e; }
+  #timer-label { font-size: 1.8rem; font-weight: 700; color: #f8fafc; text-align: center; margin-bottom: 1.25rem; }
+  #token-display { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 0.6rem 1.2rem; font-family: 'Courier New', monospace; font-size: 1.2rem; letter-spacing: 0.15em; color: #7dd3fc; text-align: center; margin-bottom: 0.4rem; }
+  #rotation-count { font-size: 0.8rem; color: #475569; text-align: center; margin-bottom: 0.5rem; }
+  #reg-status { font-size: 0.75rem; text-align: center; margin-bottom: 1rem; min-height: 16px; color: #94a3b8; }
+  #reg-status.ok  { color: #4ade80; }
+  #reg-status.err { color: #f87171; }
+  #status-pill { display: inline-block; padding: 4px 16px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; background: #14532d; color: #86efac; margin-bottom: 1.5rem; }
+  #status-pill.stopped { background: #1e293b; color: #64748b; }
+  /* Crowd size badge */
+  #crowd-note { background: #1e3a5f; border: 1px solid #1d4ed8; color: #93c5fd; border-radius: 8px; padding: 6px 14px; font-size: 0.78rem; text-align: center; margin-bottom: 1rem; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 1.5rem; }
+  button { padding: 9px 22px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #f1f5f9; font-size: 0.9rem; cursor: pointer; }
+  button:hover { background: #334155; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { background: #7f1d1d; border-color: #991b1b; color: #fca5a5; }
+  #setup-panel { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.25rem; width: 100%; max-width: 400px; margin-bottom: 1.5rem; }
+  #setup-panel label { font-size: 0.8rem; color: #94a3b8; display: block; margin-bottom: 4px; }
+  #setup-panel input { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid #334155; background: #0f172a; color: #f1f5f9; font-size: 0.88rem; }
+  #log-box { width: 100%; max-width: 400px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 0.75rem 1rem; }
+  #log-title { font-size: 0.75rem; color: #64748b; margin-bottom: 6px; }
+  #log-list { list-style: none; max-height: 110px; overflow-y: auto; }
+  #log-list li { font-size: 0.75rem; font-family: 'Courier New', monospace; color: #475569; padding: 3px 0; border-bottom: 1px solid #0f172a; }
+  #log-list li.ok { color: #4ade80; }
+</style>
+</head>
+<body>
+
+<h1>Attendance QR</h1>
+<div id="subject-name">Enter session name and start</div>
+<span id="status-pill" class="stopped">Stopped</span>
+
+<div id="crowd-note">👥 Large class mode — QR rotates every 30s, 90s grace window for submission</div>
+
+<div id="qr-wrapper">
+  <div id="qr-code"></div>
+  <div id="qr-registering">
+    <div class="spinner"></div>
+    <p>Activating QR...</p>
+  </div>
+</div>
+
+<div id="timer-bar-bg"><div id="timer-bar"></div></div>
+<div id="timer-label">—</div>
+<div id="token-display">——————</div>
+<div id="rotation-count">0 rotations</div>
+<div id="reg-status"></div>
+
+<div id="setup-panel">
+  <label>Session name</label>
+  <input type="text" id="subject-input" placeholder="e.g. Data Structures — Lecture 4">
+</div>
+
+<div class="controls">
+  <button class="primary" id="btn-start" onclick="startSession()">Start session</button>
+  <button class="danger"  id="btn-stop"  onclick="stopSession()" disabled>Stop session</button>
+</div>
+
+<div id="log-box">
+  <div id="log-title">Token rotation log</div>
+  <ul id="log-list"><li>— no rotations yet —</li></ul>
+</div>
+
+<script>
+  // ── CONFIGURE THESE ───────────────────────────────────────
+  const NETLIFY_URL = 'https://splendid-longma-243b8e.netlify.app';
+  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw87F-ZurJcofzP8ctUlkZz88YM78lx0hc35vqMgh77IkzHmNu1YKtAkbcPSH7x-RMI5w/exec';
+
+  // ── Large class tuning ───────────────────────────────────
+  // 30s rotation: gives 200 students enough time to scan
+  // before the QR changes. Old QRs still work for 90s after
+  // they rotate off screen (grace window in backend).
+  const INTERVAL_MS = 30000;
+  // ─────────────────────────────────────────────────────────
+
+  let mainInterval = null, countdownInterval = null;
+  let rotations = 0, currentToken = null;
+
+  function generateToken() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let t = '';
+    for (let i = 0; i < 8; i++) t += chars[Math.floor(Math.random() * chars.length)];
+    return t;
+  }
+
+  function buildFormURL(token) {
+    const subject = encodeURIComponent(document.getElementById('subject-input').value.trim());
+    const backend = encodeURIComponent(BACKEND_URL);
+    return NETLIFY_URL + '?token=' + token + '&subject=' + subject + '&backend=' + backend;
+  }
+
+  function drawQR(url) {
+    const el = document.getElementById('qr-code');
+    el.innerHTML = '';
+    new QRCode(el, { text: url, width: 260, height: 260, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  }
+
+  function registerToken(token) {
+    return fetch(BACKEND_URL + '?action=register&token=' + encodeURIComponent(token) + '&t=' + Date.now(), {
+      mode: 'no-cors'
+    }).then(() => true).catch(() => false);
+  }
+
+  function stopTokens() {
+    return fetch(BACKEND_URL + '?action=stop&t=' + Date.now(), {
+      mode: 'no-cors'
+    }).catch(() => {});
+  }
+
+  async function rotate() {
+    const regOverlay = document.getElementById('qr-registering');
+    const regStatus  = document.getElementById('reg-status');
+
+    currentToken = generateToken();
+    regOverlay.style.display = 'flex';
+    regStatus.textContent = 'Registering with server...';
+    regStatus.className = '';
+
+    await registerToken(currentToken);
+    await new Promise(r => setTimeout(r, 800));
+
+    drawQR(buildFormURL(currentToken));
+    regOverlay.style.display = 'none';
+
+    regStatus.textContent = 'Token active — QR is live';
+    regStatus.className = 'ok';
+
+    document.getElementById('token-display').textContent = currentToken;
+    rotations++;
+    document.getElementById('rotation-count').textContent = rotations + ' rotation' + (rotations !== 1 ? 's' : '');
+
+    const log = document.getElementById('log-list');
+    if (log.firstChild && log.firstChild.textContent.includes('no rotations')) log.innerHTML = '';
+    const li = document.createElement('li');
+    li.textContent = new Date().toLocaleTimeString() + '  →  ' + currentToken + ' ✓';
+    li.className = 'ok';
+    setTimeout(() => li.className = '', 2000);
+    log.insertBefore(li, log.firstChild);
+    if (log.children.length > 30) log.removeChild(log.lastChild);
+  }
+
+  function startCountdown() {
+    clearInterval(countdownInterval);
+    const secs = INTERVAL_MS / 1000;
+    let tl = secs;
+    countdownInterval = setInterval(() => {
+      tl = Math.max(0, tl - 1);
+      const pct = (tl / secs) * 100;
+      const bar = document.getElementById('timer-bar');
+      bar.style.width = pct + '%';
+      bar.style.backgroundColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+      document.getElementById('timer-label').textContent = tl + 's';
+    }, 1000);
+  }
+
+  async function startSession() {
+    const subject = document.getElementById('subject-input').value.trim();
+    if (!subject) { alert('Please enter a session name.'); return; }
+    rotations = 0;
+    document.getElementById('subject-name').textContent = subject;
+    document.getElementById('status-pill').textContent = 'Live';
+    document.getElementById('status-pill').className = '';
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('subject-input').disabled = true;
+    await rotate();
+    startCountdown();
+    mainInterval = setInterval(async () => { await rotate(); startCountdown(); }, INTERVAL_MS);
+  }
+
+  async function stopSession() {
+    clearInterval(mainInterval);
+    clearInterval(countdownInterval);
+    await stopTokens();
+    document.getElementById('status-pill').textContent = 'Stopped';
+    document.getElementById('status-pill').className = 'stopped';
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    document.getElementById('subject-input').disabled = false;
+    document.getElementById('timer-bar').style.width = '100%';
+    document.getElementById('timer-label').textContent = '—';
+    document.getElementById('subject-name').textContent = 'Session ended';
+    document.getElementById('reg-status').textContent = 'Session stopped — all tokens expired';
+    document.getElementById('reg-status').className = 'err';
+    document.getElementById('qr-registering').style.display = 'none';
+  }
+</script>
+</body>
+</html>

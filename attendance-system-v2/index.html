@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mark Attendance</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+  .card { background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 2rem; width: 100%; max-width: 440px; }
+  h2 { font-size: 1.3rem; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+  .subject { font-size: 0.88rem; color: #64748b; margin-bottom: 10px; }
+  .session-badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 8px; padding: 3px 12px; font-size: 0.78rem; margin-bottom: 1.25rem; }
+  .error-banner { background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 1.75rem; text-align: center; }
+  .error-banner .icon { font-size: 2rem; margin-bottom: 10px; }
+  .error-banner h3 { color: #b91c1c; font-size: 1.1rem; margin-bottom: 8px; }
+  .error-banner p { color: #64748b; font-size: 0.88rem; line-height: 1.6; }
+  label { font-size: 0.82rem; color: #475569; display: block; margin-bottom: 4px; margin-top: 14px; }
+  label span { color: #ef4444; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid #cbd5e1; font-size: 0.92rem; color: #0f172a; background: #fff; transition: border-color 0.15s; -webkit-appearance: none; }
+  input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  button[type=submit] { margin-top: 1.5rem; width: 100%; padding: 13px; border-radius: 10px; border: none; background: #2563eb; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  button[type=submit]:disabled { background: #93c5fd; cursor: not-allowed; }
+  #msg { margin-top: 1rem; padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; display: none; line-height: 1.5; }
+  #msg.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+  #msg.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+  #loading { text-align: center; padding: 2.5rem 0; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { font-size: 0.88rem; color: #94a3b8; }
+  .feedback-section { margin-top: 1.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.1rem 1.2rem; }
+  .feedback-title { font-size: 0.88rem; font-weight: 700; color: #1e293b; margin-bottom: 1rem; letter-spacing: 0.01em; }
+  .feedback-q { margin-bottom: 1rem; }
+  .feedback-q:last-child { margin-bottom: 0; }
+  .feedback-label { font-size: 0.82rem; color: #475569; margin-bottom: 6px; }
+  .optional { color: #94a3b8; font-weight: 400; }
+  .yn-group { display: flex; gap: 10px; }
+  .yn-btn { display: flex; align-items: center; cursor: pointer; }
+  .yn-btn input[type=radio] { display: none; }
+  .yn-btn span { padding: 7px 20px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 0.85rem; background: #fff; color: #475569; transition: all 0.15s; user-select: none; }
+  .yn-btn input[type=radio]:checked + span { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+  .yn-btn span:hover { border-color: #93c5fd; background: #f0f9ff; }
+  .feedback-q textarea { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid #cbd5e1; font-size: 0.88rem; color: #0f172a; background: #fff; resize: vertical; font-family: inherit; transition: border-color 0.15s; margin-top: 2px; }
+  .feedback-q textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Verifying your QR code...</p>
+  </div>
+
+  <div id="error-view" style="display:none">
+    <div class="error-banner">
+      <div class="icon">&#10007;</div>
+      <h3 id="error-title">Link not valid</h3>
+      <p id="error-msg">Please scan the QR code shown on screen.</p>
+    </div>
+  </div>
+
+  <div id="form-view" style="display:none">
+    <h2>Mark your attendance</h2>
+    <div class="subject" id="subject-display"></div>
+    <div class="session-badge" id="session-badge"></div>
+
+    <form id="att-form">
+      <label>Full name <span>*</span></label>
+      <input type="text" name="name" required placeholder="Your full name" autocomplete="name">
+
+      <label>Roll number <span>*</span></label>
+      <input type="text" name="roll" required placeholder="e.g. 21CS045">
+
+      <label>Branch / Department <span>*</span></label>
+      <input type="text" name="branch" required placeholder="e.g. Computer Science">
+
+      <label>Year / Semester <span>*</span></label>
+      <select name="year" required>
+        <option value="">Select year / semester</option>
+        <option>1st Year — Sem 1</option>
+        <option>1st Year — Sem 2</option>
+        <option>2nd Year — Sem 3</option>
+        <option>2nd Year — Sem 4</option>
+        <option>3rd Year — Sem 5</option>
+        <option>3rd Year — Sem 6</option>
+        <option>4th Year — Sem 7</option>
+        <option>4th Year — Sem 8</option>
+      </select>
+
+      <label>Email <span>*</span></label>
+      <input type="email" name="email" required placeholder="your@college.edu" autocomplete="email">
+
+      <label>College name <span>*</span></label>
+      <input type="text" name="college" required placeholder="Your college name">
+
+      <div class="feedback-section">
+        <div class="feedback-title">📋 Class Feedback</div>
+
+        <div class="feedback-q">
+          <div class="feedback-label">1. Was the lecture easy to understand?</div>
+          <div class="yn-group">
+            <label class="yn-btn"><input type="radio" name="fb1" value="Yes" required><span>👍 Yes</span></label>
+            <label class="yn-btn"><input type="radio" name="fb1" value="No"><span>👎 No</span></label>
+          </div>
+        </div>
+
+        <div class="feedback-q">
+          <div class="feedback-label">2. Was the pace of the lecture comfortable?</div>
+          <div class="yn-group">
+            <label class="yn-btn"><input type="radio" name="fb2" value="Yes" required><span>👍 Yes</span></label>
+            <label class="yn-btn"><input type="radio" name="fb2" value="No"><span>👎 No</span></label>
+          </div>
+        </div>
+
+        <div class="feedback-q">
+          <div class="feedback-label">3. Were your doubts addressed in class?</div>
+          <div class="yn-group">
+            <label class="yn-btn"><input type="radio" name="fb3" value="Yes" required><span>👍 Yes</span></label>
+            <label class="yn-btn"><input type="radio" name="fb3" value="No"><span>👎 No</span></label>
+          </div>
+        </div>
+
+        <div class="feedback-q">
+          <div class="feedback-label">4. Would you like more examples on this topic?</div>
+          <div class="yn-group">
+            <label class="yn-btn"><input type="radio" name="fb4" value="Yes" required><span>👍 Yes</span></label>
+            <label class="yn-btn"><input type="radio" name="fb4" value="No"><span>👎 No</span></label>
+          </div>
+        </div>
+
+        <div class="feedback-q">
+          <div class="feedback-label">5. Any other feedback? <span class="optional">(optional)</span></div>
+          <textarea name="fb5" placeholder="Write your thoughts here..." rows="3"></textarea>
+        </div>
+      </div>
+
+      <label>Date <span>*</span></label>
+      <input type="date" name="date" required id="date-field">
+
+      <input type="hidden" name="token" id="token-field">
+      <input type="hidden" name="subject" id="subject-field">
+      <input type="hidden" name="action" value="submit">
+
+      <button type="submit" id="submit-btn">Submit attendance</button>
+    </form>
+    <div id="msg"></div>
+  </div>
+
+</div>
+<script>
+  const params  = new URLSearchParams(window.location.search);
+  const token   = (params.get('token') || '').trim();
+  const subject = decodeURIComponent(params.get('subject') || 'Attendance');
+  const BACKEND = decodeURIComponent(params.get('backend') || '');
+
+  document.getElementById('date-field').value = new Date().toISOString().split('T')[0];
+
+  function showError(title, msg) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error-view').style.display = 'block';
+    document.getElementById('error-title').textContent = title;
+    document.getElementById('error-msg').textContent = msg;
+  }
+
+  function showForm() {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('form-view').style.display = 'block';
+    document.getElementById('subject-display').textContent = subject;
+    document.getElementById('session-badge').textContent = 'Session: ' + subject;
+    document.getElementById('token-field').value = token;
+    document.getElementById('subject-field').value = subject;
+  }
+
+  // Hard check — no fallback, if anything goes wrong show error
+  if (!token || !BACKEND) {
+    showError('Invalid link', 'This link is missing required info. Please scan the QR code on screen.');
+  } else {
+    fetch(BACKEND + '?action=check&token=' + encodeURIComponent(token))
+      .then(r => r.json())
+      .then(data => {
+        if (data.valid) {
+          showForm();
+        } else {
+          showError('QR code expired or already used', data.message || 'Please scan the latest QR code on screen.');
+        }
+      })
+      .catch(() => {
+        // Network error — HARD BLOCK, do not show form
+        showError('Verification failed', 'Could not verify your QR code. Please check your internet connection and scan again.');
+      });
+  }
+
+  document.getElementById('att-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    const body = new URLSearchParams(new FormData(this)).toString();
+    try {
+      const res  = await fetch(BACKEND, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('att-form').style.display = 'none';
+        showMsg('success', '✓ Attendance marked! You may close this page.');
+      } else {
+        showMsg('error', data.message || 'Something went wrong.');
+        btn.disabled = false;
+        btn.textContent = 'Submit attendance';
+      }
+    } catch(err) {
+      showMsg('error', 'Network error. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Submit attendance';
+    }
+  });
+
+  function showMsg(type, text) {
+    const el = document.getElementById('msg');
+    el.style.display = 'block'; el.className = type; el.textContent = text;
+  }
+</script>
+</body>
+</html>
